@@ -10,7 +10,9 @@
 
 #define ARRAY_SIZE 9961472
 
-long *array;
+//long *array;
+long * arrays[64];
+
 
  void vtune_example(){
     
@@ -23,35 +25,36 @@ long *array;
      __itt_event_end(vtune_event_find);
  }
 
-void *writer_thread(void *arg) {
-     // Allocate memory on socket X (NUMA node X)
-    array = (long*) numa_alloc_onnode(ARRAY_SIZE * sizeof(long), sched_getcpu());    
+// void *writer_thread(void *arg) {
+//      // Allocate memory on socket X (NUMA node X)
+//     array = (long*) numa_alloc_onnode(ARRAY_SIZE * sizeof(long), sched_getcpu());    
     
-    if (!array) {
-        perror("Failed to allocate memory on socket");
-        exit(EXIT_FAILURE);
-    }
-    printf("initialized array in socket: %d\n", sched_getcpu());
+//     if (!array) {
+//         perror("Failed to allocate memory on socket");
+//         exit(EXIT_FAILURE);
+//     }
+//     printf("initialized array in socket: %d\n", sched_getcpu());
 
-    for (int i = 0; i < ARRAY_SIZE; i++) {
-        array[i] = 1;  // Write to the array
-    }
-    printf("Writer completed on CPU %d\n", sched_getcpu());
+//     for (int i = 0; i < ARRAY_SIZE; i++) {
+//         array[i] = 1;  // Write to the array
+//     }
+//     printf("Writer completed on CPU %d\n", sched_getcpu());
 
-    return NULL;
-}
+//     return NULL;
+// }
 
 
 void *reader_thread(void *arg) {
     printf("starting read test on socket: %d\n",sched_getcpu());
     fflush(stdout);
 
+    long * array = arrays[sched_getcpu()];
     long sum = 0;
     auto vtune_event =
     __itt_event_create("reading", strlen("reading"));
     __itt_event_start(vtune_event);
 
-    for(int j = 0; j<10; j++){
+    for(int j = 0; j<1000; j++){
         for (int i = 0; i < ARRAY_SIZE; i+=16) {
             __builtin_prefetch((const void *)array[i], false, 3);
             __builtin_prefetch((const void *)array[i+1], false, 3);
@@ -69,6 +72,23 @@ void *reader_thread(void *arg) {
             __builtin_prefetch((const void *)array[i+13], false, 3);
             __builtin_prefetch((const void *)array[i+14], false, 3);
             __builtin_prefetch((const void *)array[i+15], false, 3);
+
+            // __builtin_prefetch((const void *)array[i+16], false, 3);
+            // __builtin_prefetch((const void *)array[i+17], false, 3);
+            // __builtin_prefetch((const void *)array[i+18], false, 3);
+            // __builtin_prefetch((const void *)array[i+19], false, 3);
+            // __builtin_prefetch((const void *)array[i+20], false, 3);
+            // __builtin_prefetch((const void *)array[i+21], false, 3);
+            // __builtin_prefetch((const void *)array[i+22], false, 3);
+            // __builtin_prefetch((const void *)array[i+23], false, 3);
+            // __builtin_prefetch((const void *)array[i+24], false, 3);
+            // __builtin_prefetch((const void *)array[i+25], false, 3);
+            // __builtin_prefetch((const void *)array[i+26], false, 3);
+            // __builtin_prefetch((const void *)array[i+27], false, 3);
+            // __builtin_prefetch((const void *)array[i+28], false, 3);
+            // __builtin_prefetch((const void *)array[i+29], false, 3);
+            // __builtin_prefetch((const void *)array[i+30], false, 3);
+            // __builtin_prefetch((const void *)array[i+31], false, 3);
             
             sum += array[i];  // Read from the array
             sum += array[i+1];
@@ -133,7 +153,6 @@ int main() {
 
     //create an array on socket 0 for each thread we'll run on socket 1. That way each socket 1 thread can read from its respective
     // remote array durring the test and saturate the badwidth to get a clearer picture in vtune
-    long * arrays[64];
     for(int i = 0; i<32; i++){
         int cpu_id = i*2 +1; //1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51,53,55,57,59,61,63
 
@@ -152,24 +171,58 @@ int main() {
         printf("finished writing to arrays[%d] \n",cpu_id);
     }// end arrays init loop.
 
-    return 0;
+    // make 32 threads that run on:
+//1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51,53,55,57,59,61,63
+    // and each call simultaniously: void *reader_thread(void *arg)
+
+    // Create 32 threads
+    pthread_t threads[32];
+    int cpu_ids[32];
+    
+    for (int i = 0; i < 32; i++) {
+        cpu_ids[i] = i * 2 + 1;  // CPU IDs: 1, 3, 5, 7, ..., 63
+
+        // Set the CPU affinity for the thread
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(cpu_ids[i], &cpuset);
+
+        // Create the thread
+        if (pthread_create(&threads[i], NULL, reader_thread, (void *)&cpu_ids[i]) != 0) {
+            perror("Failed to create thread");
+            exit(EXIT_FAILURE);
+        }
+
+        if (pthread_setaffinity_np(threads[i], sizeof(cpu_set_t), &cpuset) != 0) {
+            perror("Failed to set thread CPU affinity");
+            exit(EXIT_FAILURE);
+        }
+
+        
+    }
+
+    // Wait for all threads to finish
+    for (int i = 0; i < 32; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    printf("All threads have finished.\n");
    
     // Pin writer thread to socket 1
-    CPU_ZERO(&writer_cpuset);
-    CPU_SET(1, &writer_cpuset);  // Adjust based on socket 1 cores
-    pthread_create(&writer, NULL, writer_thread, NULL);
-    pthread_setaffinity_np(writer, sizeof(cpu_set_t), &writer_cpuset);
+    // CPU_ZERO(&writer_cpuset);
+    // CPU_SET(1, &writer_cpuset);  // Adjust based on socket 1 cores
+    // pthread_create(&writer, NULL, writer_thread, NULL);
+    // pthread_setaffinity_np(writer, sizeof(cpu_set_t), &writer_cpuset);
 
-    // Wait for threads to complete
-    pthread_join(writer, NULL);
+    // // Wait for threads to complete
+    // pthread_join(writer, NULL);
 
-    // Pin reader thread to socket 2
-    CPU_ZERO(&reader_cpuset);
-    CPU_SET(0, &reader_cpuset);  // Adjust based on socket 0 cores
-    pthread_create(&reader, NULL, reader_thread, NULL);
-    pthread_setaffinity_np(reader, sizeof(cpu_set_t), &reader_cpuset);
+    // CPU_ZERO(&reader_cpuset);
+    // CPU_SET(0, &reader_cpuset);  // Adjust based on socket 0 cores
+    // pthread_create(&reader, NULL, reader_thread, NULL);
+    // pthread_setaffinity_np(reader, sizeof(cpu_set_t), &reader_cpuset);
 
-    pthread_join(reader, NULL);
+    // pthread_join(reader, NULL);
 
     // Free NUMA-allocated memory
     //numa_free(array, ARRAY_SIZE * sizeof(int));
