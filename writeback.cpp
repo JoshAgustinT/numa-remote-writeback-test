@@ -7,12 +7,13 @@
 //vtune markers!
 #include <ittnotify.h>
 
-
+#include <fcntl.h>
+#include <unistd.h>
+#include <string>
 #define ARRAY_SIZE 9961472
 
 //long *array;
 long * arrays[64];
-
 
  void vtune_example(){
     
@@ -45,6 +46,40 @@ long * arrays[64];
 
 
 void *reader_thread(void *arg) {
+    //From dramhit Application.cpp
+                // // Control hw prefetcher msr
+                // if (vm["hw-pref"].as<bool>()) {
+                //   // XXX: 0x1a4 is prefetch control;
+                //   // 0 - all enabled; f - all disabled
+                //   this->msr_ctrl->write_msr(0x1a4, 0x0);
+                // } else {
+                //   this->msr_ctrl->write_msr(0x1a4, 0xf);
+                // }
+
+    uint64_t write_value = 0xf;  // Write f to disable hardware prefetching
+    uint64_t msr = 0x1a4;  // MSR address for disabling hardware prefetching
+    uint32_t cpu_id = sched_getcpu();
+    
+    // Open MSR device for this CPU
+    int msr_fd = open(("/dev/cpu/" + std::to_string(cpu_id) + "/msr").c_str(), O_RDWR);
+    if (msr_fd == -1) {
+        perror("Failed to open MSR device");
+        return NULL;
+    }
+
+    // Write 0 to MSR 0x1A4 to disable hardware prefetching for this CPU
+    ssize_t ret = pwrite(msr_fd, &write_value, sizeof(write_value), msr);
+    if (ret != sizeof(write_value)) {
+        perror("pwrite failed to disable prefetching on CPU");
+        close(msr_fd);
+        return NULL;
+    }
+
+    printf("Disabled hardware prefetching on CPU %d by writing 0xf to MSR 0x1A4\n", cpu_id);
+
+    // Close the MSR file descriptor after use
+    close(msr_fd);
+
     printf("starting read test on socket: %d\n",sched_getcpu());
     fflush(stdout);
 
@@ -56,56 +91,39 @@ void *reader_thread(void *arg) {
 
     for(int j = 0; j<1000; j++){
         for (int i = 0; i < ARRAY_SIZE; i+=16) {
-            __builtin_prefetch((const void *)array[i], false, 3);
-            __builtin_prefetch((const void *)array[i+1], false, 3);
-            __builtin_prefetch((const void *)array[i+2], false, 3);
-            __builtin_prefetch((const void *)array[i+3], false, 3);
-            __builtin_prefetch((const void *)array[i+4], false, 3);
-            __builtin_prefetch((const void *)array[i+5], false, 3);
-            __builtin_prefetch((const void *)array[i+6], false, 3);
-            __builtin_prefetch((const void *)array[i+7], false, 3);
-            __builtin_prefetch((const void *)array[i+8], false, 3);
-            __builtin_prefetch((const void *)array[i+9], false, 3);
-            __builtin_prefetch((const void *)array[i+10], false, 3);
-            __builtin_prefetch((const void *)array[i+11], false, 3);
-            __builtin_prefetch((const void *)array[i+12], false, 3);
-            __builtin_prefetch((const void *)array[i+13], false, 3);
-            __builtin_prefetch((const void *)array[i+14], false, 3);
-            __builtin_prefetch((const void *)array[i+15], false, 3);
-
-            // __builtin_prefetch((const void *)array[i+16], false, 3);
-            // __builtin_prefetch((const void *)array[i+17], false, 3);
-            // __builtin_prefetch((const void *)array[i+18], false, 3);
-            // __builtin_prefetch((const void *)array[i+19], false, 3);
-            // __builtin_prefetch((const void *)array[i+20], false, 3);
-            // __builtin_prefetch((const void *)array[i+21], false, 3);
-            // __builtin_prefetch((const void *)array[i+22], false, 3);
-            // __builtin_prefetch((const void *)array[i+23], false, 3);
-            // __builtin_prefetch((const void *)array[i+24], false, 3);
-            // __builtin_prefetch((const void *)array[i+25], false, 3);
-            // __builtin_prefetch((const void *)array[i+26], false, 3);
-            // __builtin_prefetch((const void *)array[i+27], false, 3);
-            // __builtin_prefetch((const void *)array[i+28], false, 3);
-            // __builtin_prefetch((const void *)array[i+29], false, 3);
-            // __builtin_prefetch((const void *)array[i+30], false, 3);
-            // __builtin_prefetch((const void *)array[i+31], false, 3);
+            // __builtin_prefetch(&array[i], false, 3);
+            // __builtin_prefetch(&array[i+1], false, 3);
+            // __builtin_prefetch(&array[i+2], false, 3);
+            // __builtin_prefetch(&array[i+3], false, 3);
+            // __builtin_prefetch(&array[i+4], false, 3);
+            // __builtin_prefetch(&array[i+5], false, 3);
+            // __builtin_prefetch(&array[i+6], false, 3);
+            // __builtin_prefetch(&array[i+7], false, 3);
+            // __builtin_prefetch(&array[i+8], false, 3);
+            // __builtin_prefetch(&array[i+9], false, 3);
+            // __builtin_prefetch(&array[i+10], false, 3);
+            // __builtin_prefetch(&array[i+11], false, 3);
+            // __builtin_prefetch(&array[i+12], false, 3);
+            // __builtin_prefetch(&array[i+13], false, 3);
+            // __builtin_prefetch(&array[i+14], false, 3);
+            // __builtin_prefetch(&array[i+15], false, 3);
             
-            sum += array[i];  // Read from the array
-            sum += array[i+1];
-            sum += array[i+2];
-            sum += array[i+3];
-            sum += array[i+4];
-            sum += array[i+5];
-            sum += array[i+6];
-            sum += array[i+7];
-            sum += array[i+8];
-            sum += array[i+9];
-            sum += array[i+10];
-            sum += array[i+11];
-            sum += array[i+12];
-            sum += array[i+13];
-            sum += array[i+14];
-            sum += array[i+15];
+            sum = array[i];  // Read from the array
+            sum = array[i+1];
+            sum = array[i+2];
+            sum = array[i+3];
+            sum = array[i+4];
+            sum = array[i+5];
+            sum = array[i+6];
+            sum = array[i+7];
+            sum = array[i+8];
+            sum = array[i+9];
+            sum = array[i+10];
+            sum = array[i+11];
+            sum = array[i+12];
+            sum = array[i+13];
+            sum = array[i+14];
+            sum = array[i+15];
         }
     }
 
