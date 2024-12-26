@@ -61,6 +61,7 @@ void *reader_thread(void *arg) {
     uint32_t cpu_id = sched_getcpu();
     
     // Open MSR device for this CPU
+
     int msr_fd = open(("/dev/cpu/" + std::to_string(cpu_id) + "/msr").c_str(), O_RDWR);
     if (msr_fd == -1) {
         perror("Failed to open MSR device");
