@@ -84,55 +84,31 @@ void *reader_thread(void *arg) {
     printf("starting read test on socket: %d\n",sched_getcpu());
     fflush(stdout);
 
+    
     long * array = arrays[sched_getcpu()];
     long sum = 0;
     auto vtune_event =
     __itt_event_create("reading", strlen("reading"));
     __itt_event_start(vtune_event);
 
-    for(int j = 0; j<1000; j++){
-        for (int i = 0; i < ARRAY_SIZE; i+=16) {
-            // __builtin_prefetch(&array[i], false, 3);
-            // __builtin_prefetch(&array[i+1], false, 3);
-            // __builtin_prefetch(&array[i+2], false, 3);
-            // __builtin_prefetch(&array[i+3], false, 3);
-            // __builtin_prefetch(&array[i+4], false, 3);
-            // __builtin_prefetch(&array[i+5], false, 3);
-            // __builtin_prefetch(&array[i+6], false, 3);
-            // __builtin_prefetch(&array[i+7], false, 3);
-            // __builtin_prefetch(&array[i+8], false, 3);
-            // __builtin_prefetch(&array[i+9], false, 3);
-            // __builtin_prefetch(&array[i+10], false, 3);
-            // __builtin_prefetch(&array[i+11], false, 3);
-            // __builtin_prefetch(&array[i+12], false, 3);
-            // __builtin_prefetch(&array[i+13], false, 3);
-            // __builtin_prefetch(&array[i+14], false, 3);
-            // __builtin_prefetch(&array[i+15], false, 3);
-            
-            sum = array[i];  // Read from the array
-            sum = array[i+1];
-            sum = array[i+2];
-            sum = array[i+3];
-            sum = array[i+4];
-            sum = array[i+5];
-            sum = array[i+6];
-            sum = array[i+7];
-            sum = array[i+8];
-            sum = array[i+9];
-            sum = array[i+10];
-            sum = array[i+11];
-            sum = array[i+12];
-            sum = array[i+13];
-            sum = array[i+14];
-            sum = array[i+15];
+
+     for(int j = 0; j<100; j++){
+        for (int i = 0; i < ARRAY_SIZE; i++) {
+
+            //Prefetch, false= read, true= write
+            if(i%32 == 0){
+            __builtin_prefetch(&array[i], false, 3);
+            __builtin_prefetch(&array[i+8], false, 3);
+            __builtin_prefetch(&array[i+16], false, 3);
+            __builtin_prefetch(&array[i+24], false, 3);
+
+            //array[i] +=1;
+            }
+
+            sum += array[i];  // Read from the array
         }
     }
 
-    //  for(int j = 0; j<5000; j++){
-    //     for (int i = 0; i < ARRAY_SIZE; i++) {
-    //         sum += array[i];  // Read from the array
-    //     }
-    // }
     __itt_event_end(vtune_event);
 
     printf("Reader completed on CPU %d, sum: %ld\n", sched_getcpu(), sum);
